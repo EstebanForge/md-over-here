@@ -85,8 +85,12 @@ jobs:
 
       - name: Prepare Linux Artifacts
         run: |
-          tar -czf dist/md-over-here-linux-amd64.tar.gz -C dist md-over-here-linux-amd64
-          tar -czf dist/md-over-here-linux-arm64.tar.gz -C dist md-over-here-linux-arm64
+          mkdir -p dist/linux-amd64 dist/linux-arm64
+          cp dist/md-over-here-linux-amd64 dist/linux-amd64/md-over-here
+          cp dist/md-over-here-linux-arm64 dist/linux-arm64/md-over-here
+          tar -czf dist/md-over-here-linux-amd64.tar.gz -C dist/linux-amd64 md-over-here
+          tar -czf dist/md-over-here-linux-arm64.tar.gz -C dist/linux-arm64 md-over-here
+          rm -rf dist/linux-amd64 dist/linux-arm64
 
       - name: Verify release outputs
         env:
