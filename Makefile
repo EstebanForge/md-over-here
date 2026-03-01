@@ -107,6 +107,12 @@ lint:
 fmt:
 	@echo "Formatting code..."
 	$(GOFMT) ./...
+	@if command -v goimports >/dev/null 2>&1; then \
+		goimports -w .; \
+	else \
+		echo "goimports not found; skipping import formatting"; \
+		echo "Install with: go install golang.org/x/tools/cmd/goimports@latest"; \
+	fi
 
 # Run go vet
 vet:
