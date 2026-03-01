@@ -1,4 +1,4 @@
-.PHONY: build sign build-signed release-sign notarize-release test lint clean install run help cross-compile release fmt vet check
+.PHONY: build sign build-signed release-sign notarize-release test lint clean install run help cross-compile release fmt vet check ci ci-coverage
 
 # Binary name
 BINARY_NAME=md-over-here
@@ -166,8 +166,13 @@ run-verbose: build
 # Development - build and run tests
 dev: fmt lint test build
 
-# CI/CD - comprehensive checks
-ci: fmt lint test-coverage build
+# CI/CD - standardized checks
+ci: check
+	@echo "CI checks passed"
+
+# Legacy CI/CD coverage-heavy flow
+ci-coverage: fmt lint test-coverage build
+	@echo "CI coverage flow complete"
 
 # Cross-compile for release artifacts
 cross-compile:
@@ -213,7 +218,8 @@ help:
 	@echo "  run            - Build and run (use ARGS='...' for arguments)"
 	@echo "  run-verbose    - Build and run with verbose flag"
 	@echo "  dev            - Format, lint, test, and build"
-	@echo "  ci             - Run CI checks (fmt, lint, coverage, build)"
+	@echo "  ci             - Run CI checks (full pipeline = make check)"
+	@echo "  ci-coverage    - Run legacy CI coverage flow (fmt, lint, coverage, build)"
 	@echo "  help           - Show this help message"
 	@echo ""
 	@echo "Examples:"
