@@ -3,18 +3,23 @@ name: Release
 on:
   push:
     tags:
-      - '*.*.*'
+      - "*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (example: 1.2.3 or 1.2.3-rc.1)"
+        required: true
+        type: string
 
 permissions:
   contents: write
-  packages: write
-
-env:
-  GO_VERSION: '1.25.5'
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve_version.outputs.version }}
+      is_prerelease: ${{ steps.resolve_version.outputs.is_prerelease }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,19 +29,46 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
 
-      - name: Get version from tag
-        id: get_version
+      - name: Resolve release version
+        id: resolve_version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="${{ github.event.inputs.tag }}"
+          fi
 
-          if [ -z "$VERSION" ]; then
+          if [ -z "${VERSION}" ]; then
             echo "Error: VERSION is empty"
             exit 1
           fi
+
+          if [[ "${VERSION}" == v* ]]; then
+            echo "Error: tags must not use 'v' prefix (got: ${VERSION})"
+            exit 1
+          fi
+
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Error: VERSION must be SemVer-like (got: ${VERSION})"
+            exit 1
+          fi
+
+          BASE_VERSION="${VERSION%%+*}"
+          if [[ "${BASE_VERSION}" == *-* ]]; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
+
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "VERSION_SEMVER=${VERSION}" >> "${GITHUB_ENV}"
+          echo "IS_PRERELEASE=${IS_PRERELEASE}" >> "${GITHUB_ENV}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "is_prerelease=${IS_PRERELEASE}" >> "${GITHUB_OUTPUT}"
 
       - name: Download dependencies
         run: go mod download
@@ -45,17 +77,16 @@ jobs:
         run: go mod verify
 
       - name: Sync VERSION file with tag
-        run: echo "${{ env.VERSION }}" > VERSION
+        run: echo "${{ env.VERSION_SEMVER }}" > VERSION
 
       - name: Run tests
         run: make test
 
       - name: Run linter
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.9.0
           args: --timeout=5m
-        continue-on-error: true
 
       - name: Build release artifacts
         env:
@@ -101,16 +132,31 @@ jobs:
           tar -czf dist/md-over-here-linux-arm64.tar.gz -C dist/linux-arm64 md-over-here
           rm -rf dist/linux-amd64 dist/linux-arm64
 
+      - name: Generate checksums
+        env:
+          VERSION: ${{ env.VERSION }}
+        run: |
+          cd dist
+          sha256sum \
+            "md-over-here-darwin-arm64-${VERSION}.tar.gz" \
+            "md-over-here-darwin-amd64-${VERSION}.tar.gz" \
+            "md-over-here-linux-amd64-${VERSION}.tar.gz" \
+            "md-over-here-linux-arm64-${VERSION}.tar.gz" \
+            "md-over-here-macos-universal.tar.gz" \
+            "md-over-here-linux-amd64.tar.gz" \
+            "md-over-here-linux-arm64.tar.gz" \
+            > checksums.txt
+
       - name: Verify release outputs
         env:
           VERSION: ${{ env.VERSION }}
         run: |
           set -e
           expected_files=(
-            "dist/md-over-here-darwin-arm64"
-            "dist/md-over-here-darwin-amd64"
-            "dist/md-over-here-linux-amd64"
-            "dist/md-over-here-linux-arm64"
+            "dist/md-over-here-darwin-arm64-${VERSION}.tar.gz"
+            "dist/md-over-here-darwin-amd64-${VERSION}.tar.gz"
+            "dist/md-over-here-linux-amd64-${VERSION}.tar.gz"
+            "dist/md-over-here-linux-arm64-${VERSION}.tar.gz"
             "dist/md-over-here-macos-universal.tar.gz"
             "dist/md-over-here-linux-amd64.tar.gz"
             "dist/md-over-here-linux-arm64.tar.gz"
@@ -123,55 +169,48 @@ jobs:
               echo "OK ${file} (size: ${size} bytes)"
             else
               echo "Missing expected artifact: ${file}"
-              missing="yes"
+              exit 1
             fi
           done
 
-          if [ "${missing:-no}" = "yes" ]; then
-            exit 1
-          fi
-
-      - name: Create Release Notes
+      - name: Extract release notes from CHANGELOG.md
         env:
-          VERSION: ${{ env.VERSION }}
+          VERSION_SEMVER: ${{ env.VERSION_SEMVER }}
         run: |
-          release_date=""
-          if [ -f CHANGELOG.md ]; then
-            release_date=$(awk -v ver="$VERSION" '
-              $0 ~ "^## \\["ver"\\] - " {
-                sub(/^## \[[^]]+\] - /, "");
-                print $0;
-                exit;
-              }' CHANGELOG.md)
+          set -euo pipefail
+
+          changelog_file="CHANGELOG.md"
+          notes_file="release_notes.md"
+          start_marker="<!-- RELEASE:START ${VERSION_SEMVER} -->"
+          end_marker="<!-- RELEASE:END ${VERSION_SEMVER} -->"
+
+          if [ -f "${changelog_file}" ]; then
+            awk -v start="${start_marker}" -v end="${end_marker}" '
+              $0 == start { in_section = 1; next }
+              $0 == end { in_section = 0; exit }
+              in_section { print }
+            ' "${changelog_file}" > "${notes_file}"
+          else
+            : > "${notes_file}"
           fi
 
-          if [ -n "$release_date" ]; then
-            release_title="md-over-here $VERSION - $release_date"
-          else
-            release_title="md-over-here $VERSION"
-          fi
-
-          echo "RELEASE_TITLE=$release_title" >> "$GITHUB_ENV"
-
-          printf "## Release Notes\n\n" > release_notes.md
-          if [ -f CHANGELOG.md ]; then
-            awk -v ver="$VERSION" ' 
-              $0 ~ "^## \\["ver"\\] - " {found=1; next}
-              found && $0 ~ "^---" {exit}
-              found {print}
-            ' CHANGELOG.md | sed '1{/^$/d;}' >> release_notes.md
-          else
-            echo "- See commit history for details." >> release_notes.md
+          if ! grep -q '[^[:space:]]' "${notes_file}"; then
+            prev_tag=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+            if [ -n "${prev_tag}" ]; then
+              echo "**Full changelog:** ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${prev_tag}...${VERSION_SEMVER}" > "${notes_file}"
+            else
+              echo "**Full changelog:** ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${VERSION_SEMVER}" > "${notes_file}"
+            fi
           fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.VERSION }}
-          name: ${{ env.RELEASE_TITLE }}
+          name: md-over-here ${{ env.VERSION }}
           body_path: release_notes.md
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.resolve_version.outputs.is_prerelease == 'true' }}
           files: |
             dist/md-over-here-darwin-arm64-${{ env.VERSION }}.tar.gz
             dist/md-over-here-darwin-amd64-${{ env.VERSION }}.tar.gz
@@ -184,22 +223,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update VERSION file
+      - name: Update VERSION file on main
         env:
-          VERSION: ${{ env.VERSION }}
+          VERSION_SEMVER: ${{ env.VERSION_SEMVER }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          echo "${VERSION_SEMVER}" > VERSION
           git add VERSION
-          git commit -m "chore: update VERSION to $VERSION" || echo "No changes to commit"
+          git commit -m "chore: update VERSION to ${VERSION_SEMVER}" || echo "No changes to commit"
           git push origin HEAD:main || echo "Failed to push VERSION file update"
 
   update-tap:
     needs: release
+    if: ${{ needs.release.outputs.is_prerelease != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Homebrew Tap Update
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.TAP_GITHUB_TOKEN }}
           script: |
@@ -210,7 +251,7 @@ jobs:
               ref: 'main',
               inputs: {
                 formula: 'md-over-here',
-                tag: '${{ github.ref_name }}',
+                tag: '${{ needs.release.outputs.version }}',
                 repository: '${{ github.repository }}'
               }
             })
