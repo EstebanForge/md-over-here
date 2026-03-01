@@ -28,12 +28,13 @@ brew install EstebanForge/tap/md-over-here
 git clone https://github.com/EstebanForge/md-over-here
 cd md-over-here
 make build
+# outputs: bin/md-over-here
 ```
 
 Or using Go directly:
 
 ```bash
-go build -o md-over-here ./cmd/md-over-here
+go build -o bin/md-over-here ./cmd/md-over-here
 ```
 
 ### Install from Source to PATH
@@ -61,13 +62,28 @@ export PATH="$HOME/.local/bin:$PATH"
 ### Development
 
 ```bash
-# Run all development checks (format, lint, test, build)
+# Run all development checks (format, vet, lint, test, build)
+make check
+./scripts/checks.sh # wrapper around make check
+
+# CI alias (same flow)
+make ci
+
+# Legacy coverage-heavy CI flow
+make ci-coverage
+
+# Build variants
+make build          # unsigned local binary
+make build-signed   # optional macOS signing
+
+# Existing dev target
 make dev
 
 # Run individual commands
 make test           # Run tests
 make lint           # Run linter
 make fmt            # Format code
+make vet            # Run go vet
 make test-coverage  # Run tests with coverage
 
 # See all available commands
