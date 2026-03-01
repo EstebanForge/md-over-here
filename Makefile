@@ -1,13 +1,15 @@
-.PHONY: build test lint clean install run help cross-compile release
+.PHONY: build sign build-signed release-sign notarize-release test lint clean install run help cross-compile release fmt vet check
 
 # Binary name
 BINARY_NAME=md-over-here
 
 # Build directory
-BUILD_DIR=.
+BUILD_DIR=bin
+BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)
 DIST_DIR=dist
 VERSION ?= $(shell [ -f VERSION ] && cat VERSION || echo "dev")
 MAIN_PKG ?= $(shell if [ -d ./cmd/$(BINARY_NAME) ]; then echo ./cmd/$(BINARY_NAME); else echo .; fi)
+SIGN_IDENTITY ?= -
 
 # Go parameters
 GOCMD=go
@@ -21,8 +23,49 @@ GOFMT=$(GOCMD) fmt
 # Build the binary
 build:
 	@echo "Building $(BINARY_NAME)..."
-	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PKG)
-	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+	@mkdir -p $(BUILD_DIR)
+	$(GOBUILD) -o $(BINARY_PATH) $(MAIN_PKG)
+	@echo "Build complete: $(BINARY_PATH)"
+
+sign: build
+	@echo "Signing $(BINARY_PATH) (macOS only)..."
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		codesign -s "$(SIGN_IDENTITY)" -f "$(BINARY_PATH)"; \
+		echo "✓ Signed: $(BINARY_PATH)"; \
+	else \
+		echo "Skipping sign (non-macOS)"; \
+	fi
+
+build-signed: build sign
+
+release-sign:
+	@if [ "$${RELEASE_SIGN:-0}" != "1" ]; then \
+		echo "RELEASE_SIGN!=1; skipping release signing"; \
+	elif [ "$$(uname)" != "Darwin" ]; then \
+		echo "Release signing requires a macOS runner; skipping"; \
+	else \
+		for bin in "$(DIST_DIR)/$(BINARY_NAME)-darwin-amd64" "$(DIST_DIR)/$(BINARY_NAME)-darwin-arm64"; do \
+			if [ -f "$$bin" ]; then \
+				codesign -s "$(SIGN_IDENTITY)" -f "$$bin"; \
+				echo "✓ Signed $$bin"; \
+			else \
+				echo "Missing $$bin (skip)"; \
+			fi; \
+		done; \
+	fi
+
+notarize-release:
+	@if [ "$${RELEASE_NOTARIZE:-0}" != "1" ]; then \
+		echo "RELEASE_NOTARIZE!=1; skipping notarization"; \
+	elif [ "$$(uname)" != "Darwin" ]; then \
+		echo "Notarization requires macOS runner"; \
+		exit 1; \
+	elif [ -x "./scripts/notarize-release.sh" ]; then \
+		./scripts/notarize-release.sh; \
+	else \
+		echo "scripts/notarize-release.sh not found/executable"; \
+		exit 1; \
+	fi
 
 # Run tests
 test:
@@ -31,8 +74,14 @@ test:
 	@echo "Verifying dependencies..."
 	$(GOMOD) verify
 	@echo "Running tests..."
-	$(GOTEST) -v ./...
+	@if [ "$$($(GOCMD) env CGO_ENABLED)" = "1" ]; then \
+		$(GOTEST) -v -race ./...; \
+	else \
+		echo "CGO disabled; running tests without -race"; \
+		$(GOTEST) -v ./...; \
+	fi
 	@echo "Building main package..."
+	@mkdir -p $(BUILD_DIR)
 	$(GOBUILD) -o $(BUILD_DIR)/.build-check $(MAIN_PKG)
 	@rm -f $(BUILD_DIR)/.build-check
 
@@ -59,6 +108,25 @@ fmt:
 	@echo "Formatting code..."
 	$(GOFMT) ./...
 
+# Run go vet
+vet:
+	@echo "Running go vet..."
+	$(GOCMD) vet ./...
+
+# Run full checks
+check:
+	@echo "==> make fmt"
+	@$(MAKE) --no-print-directory fmt
+	@echo "==> make vet"
+	@$(MAKE) --no-print-directory vet
+	@echo "==> make lint"
+	@$(MAKE) --no-print-directory lint
+	@echo "==> make test"
+	@$(MAKE) --no-print-directory test
+	@echo "==> make build"
+	@$(MAKE) --no-print-directory build
+	@echo "✓ Full checks complete"
+
 # Tidy dependencies
 tidy:
 	@echo "Tidying dependencies..."
@@ -68,7 +136,7 @@ tidy:
 clean:
 	@echo "Cleaning..."
 	$(GOCLEAN)
-	rm -f $(BUILD_DIR)/$(BINARY_NAME)
+	rm -rf $(BUILD_DIR)
 	rm -rf $(DIST_DIR)
 	rm -f coverage.out coverage.html
 	@echo "Clean complete"
@@ -82,12 +150,12 @@ install:
 # Run the binary (pass arguments via ARGS variable)
 run: build
 	@echo "Running $(BINARY_NAME)..."
-	./$(BINARY_NAME) $(ARGS)
+	./$(BINARY_PATH) $(ARGS)
 
 # Run with verbose flag (for testing)
 run-verbose: build
 	@echo "Running $(BINARY_NAME) with verbose output..."
-	./$(BINARY_NAME) -v $(ARGS)
+	./$(BINARY_PATH) -v $(ARGS)
 
 # Development - build and run tests
 dev: fmt lint test build
@@ -122,11 +190,17 @@ release: clean test cross-compile
 help:
 	@echo "Available targets:"
 	@echo "  build          - Build the binary"
+	@echo "  sign           - Sign local binary (macOS only)"
+	@echo "  build-signed   - Build and sign local binary (macOS)"
+	@echo "  release-sign   - Sign macOS release binaries (optional)"
+	@echo "  notarize-release - Notarize release binaries (optional)"
 	@echo "  test           - Run tests"
 	@echo "  test-coverage  - Run tests with coverage summary"
 	@echo "  coverage       - Generate HTML coverage report"
 	@echo "  lint           - Lint code (requires golangci-lint)"
 	@echo "  fmt            - Format code"
+	@echo "  vet            - Run go vet"
+	@echo "  check          - Run full checks (fmt, vet, lint, test, build)"
 	@echo "  tidy           - Tidy dependencies"
 	@echo "  clean          - Remove build artifacts"
 	@echo "  install        - Install binary to GOPATH/bin"

@@ -194,9 +194,9 @@ func run(cmd *cobra.Command, args []string) error {
 func createSymlink() error {
 	// Common Homebrew installation paths (in order of preference)
 	brewPaths := []string{
-		"/opt/homebrew/bin/md-over-here",  // macOS ARM
-		"/usr/local/bin/md-over-here",     // macOS Intel
-		"/home/linuxbrew/.linuxbrew/bin/md-over-here", // Linux
+		"/opt/homebrew/bin/md-over-here",                                    // macOS ARM
+		"/usr/local/bin/md-over-here",                                       // macOS Intel
+		"/home/linuxbrew/.linuxbrew/bin/md-over-here",                       // Linux
 		"/home/linuxbrew/.linuxbrew/Cellar/md-over-here/*/bin/md-over-here", // Linux alternative
 	}
 

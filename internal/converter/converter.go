@@ -39,22 +39,22 @@ func (c *Converter) Convert(html string, metadata extractor.Metadata, sourceURL 
 
 	// Title as H1
 	if metadata.Title != "" {
-		output.WriteString(fmt.Sprintf("# %s\n\n", metadata.Title))
+		fmt.Fprintf(&output, "# %s\n\n", metadata.Title)
 	}
 
 	// Metadata section
-	output.WriteString(fmt.Sprintf("**URL:** %s\n", sourceURL))
+	fmt.Fprintf(&output, "**URL:** %s\n", sourceURL)
 
 	if metadata.Author != "" {
-		output.WriteString(fmt.Sprintf("**Author:** %s\n", metadata.Author))
+		fmt.Fprintf(&output, "**Author:** %s\n", metadata.Author)
 	}
 
 	if metadata.PublishDate != "" {
-		output.WriteString(fmt.Sprintf("**Published:** %s\n", metadata.PublishDate))
+		fmt.Fprintf(&output, "**Published:** %s\n", metadata.PublishDate)
 	}
 
 	if metadata.Description != "" {
-		output.WriteString(fmt.Sprintf("**Description:** %s\n", metadata.Description))
+		fmt.Fprintf(&output, "**Description:** %s\n", metadata.Description)
 	}
 
 	output.WriteString("\n---\n\n")
@@ -63,8 +63,8 @@ func (c *Converter) Convert(html string, metadata extractor.Metadata, sourceURL 
 	output.WriteString(markdown)
 
 	// Footer with fetch timestamp
-	output.WriteString(fmt.Sprintf("\n\n---\n<!-- Fetched: %s -->\n",
-		time.Now().UTC().Format(time.RFC3339)))
+	fmt.Fprintf(&output, "\n\n---\n<!-- Fetched: %s -->\n",
+		time.Now().UTC().Format(time.RFC3339))
 
 	return output.String(), nil
 }
