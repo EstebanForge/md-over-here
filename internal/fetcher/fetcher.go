@@ -23,7 +23,6 @@ type FetchResult struct {
 // HTTPFetcher implements Fetcher using standard HTTP client
 type HTTPFetcher struct {
 	client    *http.Client
-	timeout   time.Duration
 	userAgent string
 }
 
@@ -42,7 +41,6 @@ func NewHTTPFetcher(timeout time.Duration, userAgent string) *HTTPFetcher {
 			// Use default redirect policy (follows up to 10 redirects)
 			CheckRedirect: nil,
 		},
-		timeout:   timeout,
 		userAgent: userAgent,
 	}
 }

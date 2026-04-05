@@ -11,10 +11,6 @@ import (
 func TestNewHTTPFetcher(t *testing.T) {
 	fetcher := NewHTTPFetcher(30*time.Second, "test-agent")
 
-	if fetcher.timeout != 30*time.Second {
-		t.Errorf("Expected timeout 30s, got %v", fetcher.timeout)
-	}
-
 	if fetcher.userAgent != "test-agent" {
 		t.Errorf("Expected user agent 'test-agent', got %q", fetcher.userAgent)
 	}
@@ -26,10 +22,6 @@ func TestNewHTTPFetcher(t *testing.T) {
 
 func TestNewHTTPFetcherDefaults(t *testing.T) {
 	fetcher := NewHTTPFetcher(0, "")
-
-	if fetcher.timeout != 30*time.Second {
-		t.Errorf("Expected default timeout 30s, got %v", fetcher.timeout)
-	}
 
 	if !strings.Contains(fetcher.userAgent, "md-over-here") {
 		t.Errorf("Expected default user agent to contain 'md-over-here', got %q", fetcher.userAgent)
