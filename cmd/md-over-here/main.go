@@ -17,6 +17,7 @@ import (
 	"github.com/EstebanForge/md-over-here/internal/processor"
 	"github.com/EstebanForge/md-over-here/internal/toon"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -32,6 +33,7 @@ var (
 	full           bool
 	showAggregates bool
 	noHelp         bool
+	showVersion    bool
 )
 
 var rootCmd = &cobra.Command{
@@ -43,20 +45,34 @@ content while removing navigation, ads, and other clutter.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: run,
 }
+var (
+	humanReadable bool
+)
+
+var customHelpCmd = &cobra.Command{
+	Use:   "help",
+	Short: "Help about any command",
+	RunE:  runCustomHelp,
+}
 
 func init() {
+	// Add --human flag to custom help command
+	customHelpCmd.Flags().BoolVar(&humanReadable, "human", false, "Show help in human-readable format")
+
 	rootCmd.Flags().StringVarP(&outputPath, "save", "s", "", "Save to file (combines multiple URLs)")
 	rootCmd.Flags().BoolVar(&noCache, "no-cache", false, "Disable caching for this request")
 	rootCmd.Flags().StringVar(&cacheDir, "cache-dir", "", "Custom cache directory (default: ~/.config/md-over-here/cache)")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show metadata and cache status")
 	rootCmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "HTTP timeout")
 	rootCmd.Flags().StringVar(&userAgent, "user-agent", "", "Custom User-Agent header")
-	rootCmd.Flags().StringVar(&outputFormat, "format", "toon", "Output format: toon, markdown, json (default 'toon')")
+	rootCmd.Flags().StringVar(&outputFormat, "format", "", "Output format: toon, markdown, json (default: toon for stdout, markdown for --save)")
 	rootCmd.Flags().StringVar(&fields, "fields", "", "Comma-separated fields to output (for toon format)")
 	rootCmd.Flags().IntVar(&truncate, "truncate", 0, "Maximum content length in bytes (0 = no limit)")
 	rootCmd.Flags().BoolVar(&full, "full", false, "Bypass truncation and show full content")
 	rootCmd.Flags().BoolVar(&showAggregates, "aggregates", false, "Show aggregate statistics for batch operations")
 	rootCmd.Flags().BoolVar(&noHelp, "no-help", false, "Suppress help suggestions")
+	rootCmd.Flags().BoolVar(&showVersion, "version", false, "Show version information")
+	rootCmd.Flags().BoolVar(&humanReadable, "human", false, "Show help in human-readable format")
 
 	// Hook subcommands
 	hookCmd := &cobra.Command{
@@ -84,6 +100,41 @@ func init() {
 
 	hookCmd.AddCommand(initCmd, statusCmd, uninstallCmd)
 	rootCmd.AddCommand(hookCmd)
+
+	// Replace default help with custom TOON help
+	rootCmd.SetHelpCommand(customHelpCmd)
+
+	// Override help flag behavior
+	rootCmd.SetHelpFunc(func(command *cobra.Command, args []string) {
+		// Check if --human flag is set on root command
+		if humanReadable {
+			// Manually show help without recursion
+			fmt.Println(command.Long)
+			fmt.Printf("\nUsage:\n  %s\n", command.Use)
+			fmt.Println("\nAvailable Commands:")
+			for _, subCmd := range command.Commands() {
+				if !subCmd.IsAvailableCommand() || subCmd.IsAdditionalHelpTopicCommand() {
+					continue
+				}
+				fmt.Printf("  %-15s %s\n", subCmd.Name(), subCmd.Short)
+			}
+			fmt.Println("\nFlags:")
+			command.Flags().VisitAll(func(flag *pflag.Flag) {
+				fmt.Printf("      --%s", flag.Name)
+				if len(flag.Shorthand) > 0 {
+					fmt.Printf(", -%s", flag.Shorthand)
+				}
+				fmt.Printf("    %s", flag.Usage)
+				// Show default values for certain types
+				if flag.DefValue != "" && flag.DefValue != "false" && flag.DefValue != "0" && flag.DefValue != "[]" && !strings.Contains(flag.Usage, "default:") {
+					fmt.Printf(" (default: %s)", flag.DefValue)
+				}
+				fmt.Println()
+			})
+		} else {
+			_ = runCustomHelp(command, args)
+		}
+	})
 
 	// Cache command already exists in cache.go
 }
@@ -122,6 +173,19 @@ func generateFilename(rawURL string, metadata extractor.Metadata) string {
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	// Handle --version flag
+	if showVersion {
+		version := map[string]string{
+			"md-over-here": "1.0.0",
+		}
+		data, err := toon.Marshal(version)
+		if err != nil {
+			return fmt.Errorf("marshaling version: %w", err)
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
 	urls := args
 
 	// If no args, show dashboard
@@ -132,7 +196,17 @@ func run(cmd *cobra.Command, args []string) error {
 	// Validate URLs
 	for _, u := range urls {
 		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
-			return fmt.Errorf("invalid URL (must start with http:// or https://): %s", u)
+			errMap := map[string]interface{}{
+				"error": fmt.Sprintf("invalid URL (must start with http:// or https://): %s", u),
+				"url":   u,
+				"code":  "invalid_url",
+			}
+			data, err := toon.Marshal(errMap)
+			if err != nil {
+				return fmt.Errorf("marshaling error: %w", err)
+			}
+			fmt.Print(string(data))
+			return fmt.Errorf("invalid URL: %s", u)
 		}
 	}
 
@@ -187,6 +261,15 @@ func run(cmd *cobra.Command, args []string) error {
 		agg = aggregator.ComputeAggregates(results)
 	}
 
+	// Set default format based on whether we're saving to file
+	if outputFormat == "" {
+		if outputPath != "" {
+			outputFormat = "markdown"
+		} else {
+			outputFormat = "toon"
+		}
+	}
+
 	// Output based on format
 	switch outputFormat {
 	case "toon":
@@ -196,7 +279,7 @@ func run(cmd *cobra.Command, args []string) error {
 	case "markdown":
 		return outputMarkdown(results, fieldList)
 	default:
-		return fmt.Errorf("unsupported format: %s (valid: toon, json, markdown)", outputFormat)
+		return fmt.Errorf("unsupported format: '%s' (valid: toon, json, markdown)", outputFormat)
 	}
 }
 
@@ -327,38 +410,11 @@ func outputMarkdown(results []processor.Result, fieldList []string) error {
 }
 
 func runDashboard() error {
-	dir, err := getCacheDir()
-	if err != nil {
-		return fmt.Errorf("getting cache directory: %w", err)
-	}
-
-	// Get cache stats
-	var cacheCount int
-	var totalSize int64
-
-	if entries, err := os.ReadDir(dir); err == nil {
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				cacheCount++
-				filePath := filepath.Join(dir, entry.Name())
-				if info, err := os.Stat(filePath); err == nil {
-					totalSize += info.Size()
-				}
-			}
-		}
-	}
-
-	binPath, err := os.Executable()
-	if err != nil {
-		binPath = "unknown"
-	}
-
-	dashboard := map[string]interface{}{
-		"version":     "1.0.0",
-		"cache_count": cacheCount,
-		"cache_size":  formatBytes(totalSize),
-		"location":    dir,
-		"binary_path": binPath,
+	dashboard := map[string]string{
+		"fetch_url":     "md-over-here https://example.com",
+		"select_fields": "md-over-here --fields url,title",
+		"truncate":      "md-over-here --truncate 5000 <url>",
+		"help":          "md-over-here --help",
 	}
 
 	data, err := toon.Marshal(dashboard)
@@ -367,13 +423,6 @@ func runDashboard() error {
 	}
 
 	fmt.Println(string(data))
-	fmt.Println("\nCommon commands:")
-	fmt.Println("  md-over-here https://example.com     # Fetch a URL")
-	fmt.Println("  md-over-here --fields url,title      # Select specific fields")
-	fmt.Println("  md-over-here --truncate 5000 <url>   # Limit content length")
-	fmt.Println("  md-over-here cache stats             # View cache statistics")
-	fmt.Println("  md-over-here hook init               # Install shell hooks")
-
 	return nil
 }
 
@@ -412,7 +461,12 @@ func runHookInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if strings.Contains(string(existing), "# md-over-here hook integration") {
-		fmt.Printf("Hooks already installed in %s\n", scriptPath)
+		result := map[string]interface{}{
+			"status":   "already_installed",
+			"location": scriptPath,
+		}
+		data, _ := toon.Marshal(result)
+		fmt.Println(string(data))
 		return nil
 	}
 
@@ -426,9 +480,13 @@ func runHookInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("writing hook script: %w", err)
 	}
 
-	fmt.Printf("Hooks installed to %s\n", scriptPath)
-	fmt.Printf("Run 'source %s' or restart your shell to activate\n", scriptPath)
-
+	result := map[string]interface{}{
+		"status":   "installed",
+		"location": scriptPath,
+		"action":   fmt.Sprintf("Run 'source %s' or restart your shell to activate", scriptPath),
+	}
+	data, _ := toon.Marshal(result)
+	fmt.Println(string(data))
 	return nil
 }
 
@@ -441,7 +499,13 @@ func runHookStatus(cmd *cobra.Command, args []string) error {
 
 	existing, err := os.ReadFile(scriptPath)
 	if os.IsNotExist(err) {
-		fmt.Printf("Hooks not installed (file not found: %s)\n", scriptPath)
+		result := map[string]interface{}{
+			"status":   "not_installed",
+			"reason":   "file_not_found",
+			"location": scriptPath,
+		}
+		data, _ := toon.Marshal(result)
+		fmt.Println(string(data))
 		return nil
 	}
 	if err != nil {
@@ -449,11 +513,21 @@ func runHookStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if strings.Contains(string(existing), "# md-over-here hook integration") {
-		fmt.Printf("Hooks installed in %s\n", scriptPath)
+		result := map[string]interface{}{
+			"status":   "installed",
+			"location": scriptPath,
+		}
+		data, _ := toon.Marshal(result)
+		fmt.Println(string(data))
 		return nil
 	}
 
-	fmt.Printf("Hooks not installed in %s\n", scriptPath)
+	result := map[string]interface{}{
+		"status":   "not_installed",
+		"location": scriptPath,
+	}
+	data, _ := toon.Marshal(result)
+	fmt.Println(string(data))
 	return nil
 }
 
@@ -466,7 +540,13 @@ func runHookUninstall(cmd *cobra.Command, args []string) error {
 
 	existing, err := os.ReadFile(scriptPath)
 	if os.IsNotExist(err) {
-		fmt.Printf("Hooks not installed (file not found: %s)\n", scriptPath)
+		result := map[string]interface{}{
+			"status":   "not_installed",
+			"reason":   "file_not_found",
+			"location": scriptPath,
+		}
+		data, _ := toon.Marshal(result)
+		fmt.Println(string(data))
 		return nil
 	}
 	if err != nil {
@@ -475,13 +555,23 @@ func runHookUninstall(cmd *cobra.Command, args []string) error {
 
 	content := string(existing)
 	if !strings.Contains(content, "# md-over-here hook integration") {
-		fmt.Printf("Hooks not installed in %s\n", scriptPath)
+		result := map[string]interface{}{
+			"status":   "not_installed",
+			"location": scriptPath,
+		}
+		data, _ := toon.Marshal(result)
+		fmt.Println(string(data))
 		return nil
 	}
 
 	startIdx := strings.Index(content, "# md-over-here hook integration")
 	if startIdx == -1 {
-		fmt.Printf("Hooks not installed in %s\n", scriptPath)
+		result := map[string]interface{}{
+			"status":   "not_installed",
+			"location": scriptPath,
+		}
+		data, _ := toon.Marshal(result)
+		fmt.Println(string(data))
 		return nil
 	}
 
@@ -498,9 +588,13 @@ func runHookUninstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("writing shell config: %w", err)
 	}
 
-	fmt.Printf("Hooks uninstalled from %s\n", scriptPath)
-	fmt.Printf("Run 'source %s' or restart your shell to apply changes\n", scriptPath)
-
+	result := map[string]interface{}{
+		"status":   "uninstalled",
+		"location": scriptPath,
+		"action":   fmt.Sprintf("Run 'source %s' or restart your shell to apply changes", scriptPath),
+	}
+	data, _ := toon.Marshal(result)
+	fmt.Println(string(data))
 	return nil
 }
 
@@ -514,6 +608,88 @@ func printContextualHelp(fieldList []string, isBatch bool) {
 		fmt.Fprintf(os.Stderr, "Use --truncate 5000 to limit content length\n")
 	}
 	fmt.Fprintf(os.Stderr, "   Run --no-help to suppress these messages\n")
+}
+
+func runCustomHelp(cmd *cobra.Command, args []string) error {
+	// If --human flag is set, show original Cobra help
+	if humanReadable {
+		parent := cmd.Parent()
+		if parent != nil {
+			fmt.Println(parent.Long)
+			fmt.Printf("\nUsage:\n  %s\n", parent.Use)
+			fmt.Println("\nAvailable Commands:")
+			for _, subCmd := range parent.Commands() {
+				if !subCmd.IsAvailableCommand() || subCmd.IsAdditionalHelpTopicCommand() {
+					continue
+				}
+				fmt.Printf("  %-15s %s\n", subCmd.Name(), subCmd.Short)
+			}
+			fmt.Println("\nFlags:")
+			parent.Flags().VisitAll(func(flag *pflag.Flag) {
+				fmt.Printf("      --%s", flag.Name)
+				if len(flag.Shorthand) > 0 {
+					fmt.Printf(", -%s", flag.Shorthand)
+				}
+				fmt.Printf("    %s", flag.Usage)
+				// Show default values for certain types
+				if flag.DefValue != "" && flag.DefValue != "false" && flag.DefValue != "0" && flag.DefValue != "[]" && !strings.Contains(flag.Usage, "default:") {
+					fmt.Printf(" (default: %s)", flag.DefValue)
+				}
+				fmt.Println()
+			})
+			return nil
+		}
+		return fmt.Errorf("no parent command")
+	}
+
+	help := map[string]interface{}{
+		"description": "Fetch URLs and convert to clean markdown for LLM consumption",
+		"usage": map[string]string{
+			"basic":  "md-over-here <url> [url...]",
+			"save":   "md-over-here --save <file> <url>",
+			"fields": "md-over-here --fields <fields> <url>",
+		},
+		"output_formats": map[string]string{
+			"toon":     "Token-efficient structured text (default for stdout)",
+			"markdown": "Human-readable markdown (default for --save)",
+			"json":     "Structured JSON format",
+		},
+		"flags": map[string]string{
+			"save":       "Save to file (combines multiple URLs)",
+			"format":     "Output format: toon, markdown, json",
+			"fields":     "Comma-separated fields to output (TOON format)",
+			"truncate":   "Maximum content length in bytes (0 = no limit)",
+			"full":       "Bypass truncation and show full content",
+			"aggregates": "Show aggregate statistics for batch operations",
+			"no-help":    "Suppress help suggestions",
+			"no-cache":   "Disable caching for this request",
+			"cache-dir":  "Custom cache directory",
+			"verbose":    "Show metadata and cache status",
+			"timeout":    "HTTP timeout",
+			"user-agent": "Custom User-Agent header",
+		},
+		"commands": map[string]string{
+			"cache": "Manage cache (stats, clear)",
+			"hook":  "Manage shell hooks (init, status, uninstall)",
+		},
+		"examples": map[string]string{
+			"fetch_url":     "md-over-here https://example.com",
+			"save":          "md-over-here --save article.md https://example.com",
+			"select_fields": "md-over-here --fields url,title https://example.com",
+			"truncate":      "md-over-here --truncate 2000 https://example.com",
+			"batch":         "md-over-here --aggregates url1.com url2.com",
+			"cache_stats":   "md-over-here cache stats",
+			"hook_init":     "md-over-here hook init",
+		},
+	}
+
+	data, err := toon.Marshal(help)
+	if err != nil {
+		return fmt.Errorf("marshaling help: %w", err)
+	}
+
+	fmt.Println(string(data))
+	return nil
 }
 
 func main() {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/EstebanForge/md-over-here/internal/toon"
 	"github.com/spf13/cobra"
 )
 
@@ -62,7 +63,13 @@ func runCacheClear(cmd *cobra.Command, args []string) error {
 
 	// Check if cache directory exists
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		fmt.Printf("Cache directory does not exist: %s\n", dir)
+		result := map[string]interface{}{
+			"status":   "already_empty",
+			"reason":   "directory_does_not_exist",
+			"location": dir,
+		}
+		data, _ := toon.Marshal(result)
+		fmt.Println(string(data))
 		return nil
 	}
 
@@ -80,8 +87,13 @@ func runCacheClear(cmd *cobra.Command, args []string) error {
 	}
 
 	if fileCount == 0 {
-		fmt.Printf("Cache entries: 0\n")
-		fmt.Printf("Cache location: %s\n", dir)
+		result := map[string]interface{}{
+			"status":   "already_empty",
+			"entries":  0,
+			"location": dir,
+		}
+		data, _ := toon.Marshal(result)
+		fmt.Println(string(data))
 		return nil
 	}
 
@@ -95,7 +107,13 @@ func runCacheClear(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("Cleared %d cache entries from: %s\n", fileCount, dir)
+	result := map[string]interface{}{
+		"status":          "cleared",
+		"entries_removed": fileCount,
+		"location":        dir,
+	}
+	data, _ := toon.Marshal(result)
+	fmt.Println(string(data))
 	return nil
 }
 
@@ -107,9 +125,13 @@ func runCacheStats(cmd *cobra.Command, args []string) error {
 
 	// Check if cache directory exists
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		fmt.Printf("Cache entries: 0\n")
-		fmt.Printf("Cache location: %s\n", dir)
-		fmt.Printf("Total size: 0 B\n")
+		result := map[string]interface{}{
+			"entries":    0,
+			"total_size": "0 B",
+			"location":   dir,
+		}
+		data, _ := toon.Marshal(result)
+		fmt.Println(string(data))
 		return nil
 	}
 
@@ -134,15 +156,19 @@ func runCacheStats(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Display stats
-	fmt.Printf("Cache entries: %d\n", fileCount)
-	fmt.Printf("Cache location: %s\n", dir)
-	fmt.Printf("Total size: %s\n", formatBytes(totalSize))
-
-	if fileCount > 0 {
-		fmt.Printf("Average entry size: %s\n", formatBytes(totalSize/int64(fileCount)))
+	// Build stats result
+	result := map[string]interface{}{
+		"entries":    fileCount,
+		"total_size": formatBytes(totalSize),
+		"location":   dir,
 	}
 
+	if fileCount > 0 {
+		result["average_entry_size"] = formatBytes(totalSize / int64(fileCount))
+	}
+
+	data, _ := toon.Marshal(result)
+	fmt.Println(string(data))
 	return nil
 }
 

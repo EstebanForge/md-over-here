@@ -6,8 +6,22 @@ All notable changes to md-over-here will be documented in this file.
 ## [1.0.0] - 2026-04-17
 
 ### Added
-- AXI features implementation
-- TOON output support
+- AXI (Agent eXperience Improvement) features for LLM/agent optimization
+- TOON output format - token-efficient structured text (default for stdout)
+- Universal TOON output: All CLI outputs (errors, dashboard, hooks, cache) use TOON format for LLM parsing
+- Smart output format defaults: TOON for stdout, markdown for file saves
+- Field selection with `--fields` flag
+- Content truncation with `--truncate` and `--full` flags
+- Batch aggregate statistics with `--aggregates` flag
+- Simplified dashboard showing core commands in TOON format (run without arguments)
+- Shell hooks for integration (`hook init/status/uninstall`)
+- JSON output format option
+- `--no-help` flag to suppress help suggestions
+- `--version` flag to show version in TOON format
+- TOON-formatted help output (both `--help` flag and `help` command)
+- `--human` flag for help to show human-readable format when needed
+- Support for `map[string]string` in TOON encoder for nested structures
+- Simplified dashboard to 4 core commands (removed cache/hook commands)
 
 ### Changed
 - Removed dead code and runtime overhead

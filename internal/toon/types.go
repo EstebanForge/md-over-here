@@ -102,6 +102,13 @@ func encodeValue(w io.Writer, v interface{}, depth int, indent string) error {
 		return encodeNumber(w, val)
 	case bool:
 		return encodeBool(w, val)
+	case map[string]string:
+		// Convert map[string]string to map[string]interface{} for encoding
+		obj := make(map[string]interface{}, len(val))
+		for k, v := range val {
+			obj[k] = v
+		}
+		return encodeObject(w, obj, depth, indent)
 	case nil:
 		return encodeNull(w)
 	default:

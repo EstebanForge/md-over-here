@@ -14,11 +14,12 @@ A Go CLI tool that fetches web pages and converts them to clean markdown or stru
 - **Robust Error Handling**: Partial success - continues processing even if some URLs fail
 - **AXI (Agent eXperience Improvement)**: Optimized for AI agents and LLMs
   - **TOON Format**: Token-efficient, structured text output (default format)
-  - **Multiple Output Formats**: `toon` (default), `markdown`, `json`
+  - **Universal TOON Output**: All CLI outputs (errors, dashboard, hooks, cache) in TOON format for LLM parsing
+  - **Multiple Output Formats**: `toon` (default for stdout), `markdown` (default for files), `json`
   - **Field Selection**: Choose specific fields with `--fields` flag
   - **Content Truncation**: Control output length with `--truncate` and `--full`
   - **Batch Aggregates**: Show operation statistics with `--aggregates`
-  - **Dashboard**: Run without arguments for an interactive dashboard
+  - **Dashboard**: Run without arguments for command reference in TOON format
   - **Shell Hooks**: Integration via `hook init/status/uninstall` subcommands
 - **Interface-Based Architecture**: Designed for future extensibility (headless Chrome support planned)
 
@@ -105,10 +106,16 @@ make help
 > **Note:** After first run, you can use `mdoh` as a shorthand for `md-over-here`.
 
 ```bash
-# Single URL (outputs TOON format by default - optimized for agents/LLMs)
+# Single URL (stdout: TOON format by default - optimized for agents/LLMs)
 md-over-here https://example.com/article
 
-# Output in markdown format
+# Save to file (markdown format by default - perfect for human reading)
+md-over-here --save article.md https://example.com/article
+
+# Override save format to TOON if needed
+md-over-here --save article.md --format toon https://example.com/article
+
+# Output in markdown format to stdout
 md-over-here --format markdown https://example.com/article
 
 # Output in JSON format
@@ -145,6 +152,9 @@ md-over-here
 md-over-here cache stats    # Show cache statistics
 md-over-here cache clear    # Clear all cached content
 
+# Version information
+md-over-here --version      # Show version (TOON format)
+
 # Shell hooks (for advanced integration)
 md-over-here hook init      # Install shell hooks
 md-over-here hook status    # Show hook status
@@ -155,9 +165,27 @@ md-over-here hook uninstall # Remove shell hooks
 
 | Flag | Description |
 |------|-------------|
-| `-s, --save <file>` | Save to file (combines multiple URLs with separators) |
-| `--format <type>` | Output format: `toon` (default), `markdown`, `json` |
+| `--version` | Show version information (TOON format) |
+| `-s, --save <file>` | Save to file (combines multiple URLs with separators). Default: markdown format |
+| `--format <type>` | Output format: `toon`, `markdown`, `json`. Default: toon for stdout, markdown for `--save` |
 | `--fields <list>` | Comma-separated fields to output (TOON format only) |
+| `--truncate <bytes>` | Maximum content length in bytes (0 = no limit) |
+| `--full` | Bypass truncation and show full content |
+| `--aggregates` | Show aggregate statistics for batch operations |
+| `--no-help` | Suppress help suggestions |
+| `--no-cache` | Disable caching for this request |
+| `--cache-dir <path>` | Custom cache directory (default: `~/.config/md-over-here/cache`) |
+| `-v, --verbose` | Show metadata and cache status |
+| `--timeout <duration>` | HTTP timeout (default: 30s) |
+| `--user-agent <string>` | Custom User-Agent header |
+| `-h, --help` | Show help message (TOON format; add `--human` for readable format) |
+
+> **Note:** The CLI uses smart defaults:
+> - **Stdout output** (no `--save`): TOON format for agent/LLM consumption
+> - **File output** (with `--save`): Markdown format for human reading
+> - **All help/version**: TOON format for agent parsing
+> - Use `--format` to override output format
+
 | `--truncate <bytes>` | Maximum content length in bytes (0 = no limit) |
 | `--full` | Bypass truncation and show full content |
 | `--aggregates` | Show aggregate statistics for batch operations |
@@ -433,10 +461,21 @@ md-over-here hook init
 
 ### Dashboard
 
-Run `md-over-here` without arguments to launch an interactive dashboard showing cache statistics, recent activity, and quick actions.
+Run `md-over-here` without arguments to see core commands in TOON format (optimized for LLMs).
 
 ```bash
 md-over-here
+```
+
+Output:
+```
+fetch_url: md-over-here https://example.com
+select_fields: md-over-here --fields url,title
+truncate: md-over-here --truncate 5000 <url>
+help: md-over-here --help
+
+# For human-readable help (when TOON format is not needed)
+md-over-here --help --human
 ```
 
 ### Shell Hooks
