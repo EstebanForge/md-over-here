@@ -80,7 +80,8 @@ func runCacheClear(cmd *cobra.Command, args []string) error {
 	}
 
 	if fileCount == 0 {
-		fmt.Printf("Cache is already empty: %s\n", dir)
+		fmt.Printf("Cache entries: 0\n")
+		fmt.Printf("Cache location: %s\n", dir)
 		return nil
 	}
 
@@ -106,8 +107,9 @@ func runCacheStats(cmd *cobra.Command, args []string) error {
 
 	// Check if cache directory exists
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		fmt.Printf("Cache directory does not exist: %s\n", dir)
-		fmt.Println("\nNo cache entries.")
+		fmt.Printf("Cache entries: 0\n")
+		fmt.Printf("Cache location: %s\n", dir)
+		fmt.Printf("Total size: 0 B\n")
 		return nil
 	}
 
@@ -133,12 +135,12 @@ func runCacheStats(cmd *cobra.Command, args []string) error {
 	}
 
 	// Display stats
-	fmt.Printf("Cache Directory: %s\n", dir)
-	fmt.Printf("Entries: %d\n", fileCount)
-	fmt.Printf("Total Size: %s\n", formatBytes(totalSize))
+	fmt.Printf("Cache entries: %d\n", fileCount)
+	fmt.Printf("Cache location: %s\n", dir)
+	fmt.Printf("Total size: %s\n", formatBytes(totalSize))
 
 	if fileCount > 0 {
-		fmt.Printf("Average Entry Size: %s\n", formatBytes(totalSize/int64(fileCount)))
+		fmt.Printf("Average entry size: %s\n", formatBytes(totalSize/int64(fileCount)))
 	}
 
 	return nil

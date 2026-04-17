@@ -184,8 +184,8 @@ func TestProcessFetchError(t *testing.T) {
 		t.Error("Should not have markdown on error")
 	}
 
-	if !strings.Contains(result.Error.Error(), "fetching URL") {
-		t.Errorf("Error should mention 'fetching URL', got: %v", result.Error)
+	if !strings.Contains(result.Error.Error(), "fetch_failed") {
+		t.Errorf("Error should mention 'fetch_failed', got: %v", result.Error)
 	}
 }
 
