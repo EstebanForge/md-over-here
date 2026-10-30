@@ -12,7 +12,20 @@ This repository is a Go CLI application (`md-over-here`).
 Keep new runtime code in `internal/` unless it is part of the CLI surface.
 
 ## Build, Test, and Development Commands
-Use the `Makefile` as the canonical interface:
+### Quick Commands (`just` recipes)
+
+```bash
+just            # List all available targets
+just build      # Build bin/md-over-here
+just build-release # Build optimized release binary
+just fmt        # Format Go code
+just vet        # Run go vet
+just test       # Run tests
+just check      # Full check suite (fmt, vet, lint, test, build)
+just ci         # Run local CI checks
+```
+
+Or use the `Makefile` directly:
 
 - `make build`: build `bin/md-over-here`.
 - `make test`: download/verify modules, run tests (with `-race` when available), and perform a build check.
